@@ -1,62 +1,48 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import plotly.express as px
+import requests
 import datetime
 
 # Set Streamlit page config
-st.set_page_config(page_title="📈 Live Stock Market Dashboard", layout="wide")
+st.set_page_config(page_title="💰 Live Crypto Dashboard", layout="wide")
 
-st.title("📊 Live Stock Market Dashboard")
-st.markdown("View real-time stock prices, closing trends, and trading volume.")
+st.title("💹 Live Cryptocurrency Dashboard")
+st.markdown("Track real-time prices and historical trends of popular cryptocurrencies.")
 
-# Sidebar input
-symbols = st.sidebar.multiselect(
-    "Select Stocks to View",
-    ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX", "IBM", "INTC"],
-    default=["AAPL", "MSFT", "GOOGL"]
+# Sidebar
+coins = st.sidebar.multiselect(
+    "Select Cryptocurrencies",
+    ["BTC", "ETH", "BNB", "ADA", "DOGE", "SOL", "XRP", "LTC"],
+    default=["BTC", "ETH"]
 )
 
-start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
-end_date = st.sidebar.date_input("End Date", datetime.date.today())
+days = st.sidebar.slider("Days of History", 1, 60, 30)
 
-# Load stock data
-if symbols:
-    all_data = yf.download(symbols, start=start_date, end=end_date)
+# API Base URL
+def get_crypto_data(coin, limit=30):
+    url = f"https://min-api.cryptocompare.com/data/v2/histoday?fsym={coin}&tsym=USD&limit={limit}"
+    response = requests.get(url)
+    data = response.json()["Data"]["Data"]
+    df = pd.DataFrame(data)
+    df['time'] = pd.to_datetime(df['time'], unit='s')
+    df['coin'] = coin
+    return df
 
-    # Flatten multi-index columns
-    all_data.columns = ['_'.join(col).strip('_') if isinstance(col, tuple) else col for col in all_data.columns]
-    all_data.reset_index(inplace=True)
+# Fetch and display data
+if coins:
+    all_data = pd.concat([get_crypto_data(coin, limit=days) for coin in coins])
 
-    st.subheader("📅 Raw Data Preview")
-    st.dataframe(all_data.head(), use_container_width=True)
+    st.subheader("📅 Historical Price Data")
+    st.dataframe(all_data[['time', 'coin', 'close', 'volumeto']].tail(), use_container_width=True)
 
-    # Closing Price Trend
-    st.subheader("📈 Closing Price Trend")
-    fig1 = px.line()
-    for symbol in symbols:
-        fig1.add_scatter(
-            x=all_data['Date'],
-            y=all_data[f'Close_{symbol}'],
-            mode='lines',
-            name=symbol
-        )
-    fig1.update_layout(title="Closing Price Over Time", xaxis_title="Date", yaxis_title="Price (USD)")
+    st.subheader("📈 Price Trend")
+    fig1 = px.line(all_data, x='time', y='close', color='coin', title='Closing Price Over Time')
     st.plotly_chart(fig1, use_container_width=True)
 
-    # Volume Traded
     st.subheader("📊 Volume Traded")
-    fig2 = px.area()
-    for symbol in symbols:
-        fig2.add_scatter(
-            x=all_data['Date'],
-            y=all_data[f'Volume_{symbol}'],
-            mode='lines',
-            stackgroup='one',
-            name=symbol
-        )
-    fig2.update_layout(title="Daily Volume Traded", xaxis_title="Date", yaxis_title="Volume")
+    fig2 = px.area(all_data, x='time', y='volumeto', color='coin', title='Trading Volume Over Time', groupnorm='percent')
     st.plotly_chart(fig2, use_container_width=True)
 
 else:
-    st.warning("👈 Please select at least one stock symbol to view data.")
+    st.warning("👈 Please select at least one cryptocurrency to view data.")
